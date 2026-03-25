@@ -18,10 +18,17 @@ const jira = axios.create({
 });
 
 // ✅ MCP Server
-const server = new Server({
-  name: "jira-mcp",
-  version: "1.0.0"
-});
+const server = new Server(
+  {
+    name: "jira-mcp",
+    version: "1.0.0"
+  },
+  {
+    capabilities: {
+      tools: {}
+    }
+  }
+);
 
 
 // 🔍 Tool: Search Issues
