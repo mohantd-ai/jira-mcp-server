@@ -17,7 +17,7 @@ const jira = axios.create({
   }
 });
 
-// ✅ MCP Server
+// ✅ MCP Server (correct constructor)
 const server = new Server(
   {
     name: "jira-mcp",
@@ -30,57 +30,81 @@ const server = new Server(
   }
 );
 
-
-// 🔍 Tool: Search Issues
-server.tool(
-  "searchIssues",
-  {
-    jql: "string"
-  },
-  async ({ jql }) => {
-    const res = await jira.get("/rest/api/3/search", {
-      params: { jql: jql || "ORDER BY created DESC" }
-    });
-
+// ✅ LIST TOOLS (correct MCP format)
+server.setRequestHandler(
+  { method: "tools/list" },
+  async () => {
     return {
-      content: [
+      tools: [
         {
-          type: "text",
-          text: JSON.stringify(res.data.issues.slice(0, 5), null, 2)
+          name: "searchIssues",
+          description: "Search Jira issues",
+          inputSchema: {
+            type: "object",
+            properties: {
+              jql: { type: "string" }
+            }
+          }
+        },
+        {
+          name: "createIssue",
+          description: "Create Jira issue",
+          inputSchema: {
+            type: "object",
+            properties: {
+              projectKey: { type: "string" },
+              summary: { type: "string" }
+            }
+          }
         }
       ]
     };
   }
 );
 
+// ✅ TOOL EXECUTION
+server.setRequestHandler(
+  { method: "tools/call" },
+  async (req) => {
+    const { name, arguments: args } = req.params;
 
-// 📝 Tool: Create Issue
-server.tool(
-  "createIssue",
-  {
-    projectKey: "string",
-    summary: "string"
-  },
-  async ({ projectKey, summary }) => {
-    const res = await jira.post("/rest/api/3/issue", {
-      fields: {
-        project: { key: projectKey },
-        summary,
-        issuetype: { name: "Task" }
-      }
-    });
+    if (name === "searchIssues") {
+      const res = await jira.get("/rest/api/3/search", {
+        params: { jql: args.jql || "ORDER BY created DESC" }
+      });
 
-    return {
-      content: [
-        {
-          type: "text",
-          text: `Created issue: ${res.data.key}`
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(res.data.issues.slice(0, 5), null, 2)
+          }
+        ]
+      };
+    }
+
+    if (name === "createIssue") {
+      const res = await jira.post("/rest/api/3/issue", {
+        fields: {
+          project: { key: args.projectKey },
+          summary: args.summary,
+          issuetype: { name: "Task" }
         }
-      ]
-    };
+      });
+
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Created issue: ${res.data.key}`
+          }
+        ]
+      };
+    }
+
+    throw new Error("Unknown tool");
   }
 );
-
 
 // ✅ SSE endpoint
 app.get("/sse", async (req, res) => {
@@ -88,7 +112,7 @@ app.get("/sse", async (req, res) => {
   await server.connect(transport);
 });
 
-// Required endpoint
+// required
 app.post("/messages", express.json(), async (req, res) => {
   res.status(200).end();
 });
