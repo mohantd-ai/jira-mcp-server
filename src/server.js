@@ -1,47 +1,97 @@
-const express = require("express");
-const axios = require("axios");
-require("dotenv").config();
+import express from "express";
+import axios from "axios";
+import dotenv from "dotenv";
+import {
+  createServer
+} from "@modelcontextprotocol/sdk/server/index.js";
+import {
+  SSEServerTransport
+} from "@modelcontextprotocol/sdk/server/sse.js";
+
+dotenv.config();
 
 const app = express();
-app.use(express.json());
 
-app.use((req, res, next) => {
-  const key = req.headers["x-api-key"];
-  if (key !== process.env.API_KEY) {
-    return res.status(403).json({ error: "Unauthorized" });
-  }
-  next();
-});
-
+// Jira client
 const jira = axios.create({
   baseURL: process.env.JIRA_BASE_URL,
   auth: {
     username: process.env.JIRA_EMAIL,
     password: process.env.JIRA_API_TOKEN
+  },
+  headers: {
+    "Accept": "application/json",
+    "Content-Type": "application/json"
   }
 });
 
-app.get("/", (req, res) => {
-  res.send("Jira MCP running");
+// Create MCP server
+const server = createServer({
+  name: "jira-mcp",
+  version: "1.0.0"
 });
 
-app.get("/issues", async (req, res) => {
-  const response = await jira.get("/rest/api/3/search");
-  res.json(response.data);
+// 🔍 Tool: Search Issues
+server.tool(
+  "searchIssues",
+  {
+    jql: "string"
+  },
+  async ({ jql }) => {
+    const res = await jira.get("/rest/api/3/search", {
+      params: { jql }
+    });
+
+    return {
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify(res.data.issues.slice(0, 5), null, 2)
+        }
+      ]
+    };
+  }
+);
+
+// 📝 Tool: Create Issue
+server.tool(
+  "createIssue",
+  {
+    projectKey: "string",
+    summary: "string"
+  },
+  async ({ projectKey, summary }) => {
+    const res = await jira.post("/rest/api/3/issue", {
+      fields: {
+        project: { key: projectKey },
+        summary,
+        issuetype: { name: "Task" }
+      }
+    });
+
+    return {
+      content: [
+        {
+          type: "text",
+          text: `Created issue: ${res.data.key}`
+        }
+      ]
+    };
+  }
+);
+
+// ✅ SSE endpoint (IMPORTANT)
+app.get("/sse", async (req, res) => {
+  const transport = new SSEServerTransport("/messages", res);
+  await server.connect(transport);
 });
 
-app.post("/issue", async (req, res) => {
-  const { projectKey, summary } = req.body;
-
-  const response = await jira.post("/rest/api/3/issue", {
-    fields: {
-      project: { key: projectKey },
-      summary,
-      issuetype: { name: "Task" }
-    }
-  });
-
-  res.json(response.data);
+// Required messages endpoint
+app.post("/messages", express.json(), async (req, res) => {
+  res.status(200).end();
 });
 
-app.listen(process.env.PORT || 3000);
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => {
+  console.log(`MCP Jira Server running on port ${PORT}`);
+});
