@@ -132,23 +132,32 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
 });
 
 /* =========================
-   SSE ENDPOINT (FIXED)
+   SSE CONNECTION HANDLING
 ========================= */
+
+// store active connections
+const transports = new Map();
+
+/* SSE endpoint */
 app.get("/sse", async (req, res) => {
   try {
-    console.log("✅ SSE connection started");
+    console.log("✅ SSE connected");
 
-    // Required headers
     res.setHeader("Content-Type", "text/event-stream");
     res.setHeader("Cache-Control", "no-cache");
     res.setHeader("Connection", "keep-alive");
 
-    // VERY IMPORTANT: send headers immediately
-    if (res.flushHeaders) {
-      res.flushHeaders();
-    }
+    if (res.flushHeaders) res.flushHeaders();
 
     const transport = new SSEServerTransport("/messages", res);
+
+    const sessionId = transport.sessionId;
+    transports.set(sessionId, transport);
+
+    req.on("close", () => {
+      console.log("❌ SSE disconnected");
+      transports.delete(sessionId);
+    });
 
     await server.connect(transport);
 
@@ -158,11 +167,23 @@ app.get("/sse", async (req, res) => {
   }
 });
 
-/* =========================
-   MESSAGE ENDPOINT
-========================= */
+/* MCP message handler */
 app.post("/messages", async (req, res) => {
-  res.status(200).end();
+  try {
+    const sessionId = req.query.sessionId;
+
+    const transport = transports.get(sessionId);
+
+    if (!transport) {
+      return res.status(400).send("Invalid session");
+    }
+
+    await transport.handlePostMessage(req, res);
+
+  } catch (err) {
+    console.error("❌ Message error:", err);
+    res.status(500).end();
+  }
 });
 
 /* =========================
