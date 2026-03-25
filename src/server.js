@@ -1,12 +1,8 @@
 import express from "express";
 import axios from "axios";
 import dotenv from "dotenv";
-import {
-  createServer
-} from "@modelcontextprotocol/sdk/server/index.js";
-import {
-  SSEServerTransport
-} from "@modelcontextprotocol/sdk/server/sse.js";
+import { Server } from "@modelcontextprotocol/sdk/server/index.js";
+import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";
 
 dotenv.config();
 
@@ -18,28 +14,58 @@ const jira = axios.create({
   auth: {
     username: process.env.JIRA_EMAIL,
     password: process.env.JIRA_API_TOKEN
-  },
-  headers: {
-    "Accept": "application/json",
-    "Content-Type": "application/json"
   }
 });
 
-// Create MCP server
-const server = createServer({
-  name: "jira-mcp",
-  version: "1.0.0"
-});
+// ✅ Create MCP server
+const server = new Server(
+  {
+    name: "jira-mcp",
+    version: "1.0.0"
+  },
+  {
+    capabilities: {
+      tools: {}
+    }
+  }
+);
 
 // 🔍 Tool: Search Issues
-server.tool(
-  "searchIssues",
-  {
-    jql: "string"
-  },
-  async ({ jql }) => {
+server.setRequestHandler("tools/list", async () => {
+  return {
+    tools: [
+      {
+        name: "searchIssues",
+        description: "Search Jira issues using JQL",
+        inputSchema: {
+          type: "object",
+          properties: {
+            jql: { type: "string" }
+          }
+        }
+      },
+      {
+        name: "createIssue",
+        description: "Create Jira issue",
+        inputSchema: {
+          type: "object",
+          properties: {
+            projectKey: { type: "string" },
+            summary: { type: "string" }
+          }
+        }
+      }
+    ]
+  };
+});
+
+// 🧠 Tool execution
+server.setRequestHandler("tools/call", async (request) => {
+  const { name, arguments: args } = request.params;
+
+  if (name === "searchIssues") {
     const res = await jira.get("/rest/api/3/search", {
-      params: { jql }
+      params: { jql: args.jql || "ORDER BY created DESC" }
     });
 
     return {
@@ -51,20 +77,12 @@ server.tool(
       ]
     };
   }
-);
 
-// 📝 Tool: Create Issue
-server.tool(
-  "createIssue",
-  {
-    projectKey: "string",
-    summary: "string"
-  },
-  async ({ projectKey, summary }) => {
+  if (name === "createIssue") {
     const res = await jira.post("/rest/api/3/issue", {
       fields: {
-        project: { key: projectKey },
-        summary,
+        project: { key: args.projectKey },
+        summary: args.summary,
         issuetype: { name: "Task" }
       }
     });
@@ -78,15 +96,17 @@ server.tool(
       ]
     };
   }
-);
 
-// ✅ SSE endpoint (IMPORTANT)
+  throw new Error("Unknown tool");
+});
+
+// ✅ SSE endpoint
 app.get("/sse", async (req, res) => {
   const transport = new SSEServerTransport("/messages", res);
   await server.connect(transport);
 });
 
-// Required messages endpoint
+// Required endpoint
 app.post("/messages", express.json(), async (req, res) => {
   res.status(200).end();
 });
