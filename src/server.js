@@ -17,55 +17,22 @@ const jira = axios.create({
   }
 });
 
-// ✅ Create MCP server
-const server = new Server(
-  {
-    name: "jira-mcp",
-    version: "1.0.0"
-  },
-  {
-    capabilities: {
-      tools: {}
-    }
-  }
-);
-
-// 🔍 Tool: Search Issues
-server.setRequestHandler("tools/list", async () => {
-  return {
-    tools: [
-      {
-        name: "searchIssues",
-        description: "Search Jira issues using JQL",
-        inputSchema: {
-          type: "object",
-          properties: {
-            jql: { type: "string" }
-          }
-        }
-      },
-      {
-        name: "createIssue",
-        description: "Create Jira issue",
-        inputSchema: {
-          type: "object",
-          properties: {
-            projectKey: { type: "string" },
-            summary: { type: "string" }
-          }
-        }
-      }
-    ]
-  };
+// ✅ MCP Server
+const server = new Server({
+  name: "jira-mcp",
+  version: "1.0.0"
 });
 
-// 🧠 Tool execution
-server.setRequestHandler("tools/call", async (request) => {
-  const { name, arguments: args } = request.params;
 
-  if (name === "searchIssues") {
+// 🔍 Tool: Search Issues
+server.tool(
+  "searchIssues",
+  {
+    jql: "string"
+  },
+  async ({ jql }) => {
     const res = await jira.get("/rest/api/3/search", {
-      params: { jql: args.jql || "ORDER BY created DESC" }
+      params: { jql: jql || "ORDER BY created DESC" }
     });
 
     return {
@@ -77,12 +44,21 @@ server.setRequestHandler("tools/call", async (request) => {
       ]
     };
   }
+);
 
-  if (name === "createIssue") {
+
+// 📝 Tool: Create Issue
+server.tool(
+  "createIssue",
+  {
+    projectKey: "string",
+    summary: "string"
+  },
+  async ({ projectKey, summary }) => {
     const res = await jira.post("/rest/api/3/issue", {
       fields: {
-        project: { key: args.projectKey },
-        summary: args.summary,
+        project: { key: projectKey },
+        summary,
         issuetype: { name: "Task" }
       }
     });
@@ -96,9 +72,8 @@ server.setRequestHandler("tools/call", async (request) => {
       ]
     };
   }
+);
 
-  throw new Error("Unknown tool");
-});
 
 // ✅ SSE endpoint
 app.get("/sse", async (req, res) => {
