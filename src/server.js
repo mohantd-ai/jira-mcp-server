@@ -135,7 +135,6 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
    SSE CONNECTION HANDLING
 ========================= */
 
-// store active connections
 const transports = new Map();
 
 /* SSE endpoint */
@@ -148,6 +147,10 @@ app.get("/sse", async (req, res) => {
     res.setHeader("Connection", "keep-alive");
 
     if (res.flushHeaders) res.flushHeaders();
+
+    // ✅ IMPORTANT: Initial handshake event
+    res.write(`event: ready\n`);
+    res.write(`data: connected\n\n`);
 
     const transport = new SSEServerTransport("/messages", res);
 
@@ -198,6 +201,6 @@ app.get("/", (req, res) => {
 ========================= */
 const PORT = process.env.PORT || 3000;
 
-app.listen(PORT, () => {
+app.listen(PORT, "0.0.0.0", () => {
   console.log(`🚀 MCP Jira Server running on port ${PORT}`);
 });
