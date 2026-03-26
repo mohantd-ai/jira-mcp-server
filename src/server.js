@@ -67,7 +67,8 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
           properties: {
             projectKey: { type: "string" },
             summary: { type: "string" }
-          }
+          },
+          required: ["projectKey", "summary"]
         }
       }
     ]
@@ -84,7 +85,7 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
     // 🔍 SEARCH ISSUES
     if (name === "searchIssues") {
       const res = await jira.get("/rest/api/3/search", {
-        params: { jql: args.jql || "ORDER BY created DESC" }
+        params: { jql: args?.jql || "ORDER BY created DESC" }
       });
 
       return {
@@ -120,11 +121,13 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
     throw new Error("Unknown tool");
 
   } catch (err) {
+    console.error("Tool error:", err?.response?.data || err.message);
+
     return {
       content: [
         {
           type: "text",
-          text: `Error: ${err.response?.data || err.message}`
+          text: `Error: ${JSON.stringify(err?.response?.data || err.message)}`
         }
       ]
     };
@@ -147,10 +150,6 @@ app.get("/sse", async (req, res) => {
     res.setHeader("Connection", "keep-alive");
 
     if (res.flushHeaders) res.flushHeaders();
-
-    // ✅ IMPORTANT: Initial handshake event
-    res.write(`event: ready\n`);
-    res.write(`data: connected\n\n`);
 
     const transport = new SSEServerTransport("/messages", res);
 
